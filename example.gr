@@ -1,0 +1,12 @@
+module Example
+
+from "./dependencyGraph.gr" include DependencyGraph
+
+let dependencyGraph = DependencyGraph.make() // Create a new dependency graph
+DependencyGraph.setNode('A', 1, dependencyGraph) // Add a node with value 1
+DependencyGraph.setNode('B', 2, dependencyGraph) // Add a node with value 2
+DependencyGraph.setNode('C', 3, dependencyGraph) // Add a node with value 3
+DependencyGraph.addDependency('A', 'B', dependencyGraph) // A depends on B
+DependencyGraph.addDependency('A', 'C', dependencyGraph) // A depends on C as well
+DependencyGraph.addDependency('B', 'C', dependencyGraph) // B depends on C
+print(DependencyGraph.overallOrder(dependencyGraph)) // Ok(['C', 'B', 'A'])

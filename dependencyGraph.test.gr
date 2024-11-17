@@ -1,0 +1,311 @@
+module DependencyGraphTest
+
+from "./dependencyGraph.gr" include DependencyGraph
+from "list" include List
+
+// DependencyGraph.size
+let depGraph = DependencyGraph.make()
+assert DependencyGraph.size(depGraph) == 0
+DependencyGraph.setNode("a", 1, depGraph)
+assert DependencyGraph.size(depGraph) == 1
+DependencyGraph.setNode("b", 2, depGraph)
+assert DependencyGraph.size(depGraph) == 2
+DependencyGraph.removeNode("a", depGraph)
+assert DependencyGraph.size(depGraph) == 1
+DependencyGraph.removeNode("c", depGraph)
+assert DependencyGraph.size(depGraph) == 1
+// containsNode
+let depGraph = DependencyGraph.make()
+assert DependencyGraph.containsNode("a", depGraph) == false
+DependencyGraph.setNode("a", 1, depGraph)
+assert DependencyGraph.containsNode("a", depGraph) == true
+assert DependencyGraph.containsNode("b", depGraph) == false
+// setNode
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode("a", 1, depGraph)
+assert DependencyGraph.containsNode("a", depGraph) == true
+assert DependencyGraph.getNode("a", depGraph) == Some(1)
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode("a", 'c', depGraph)
+assert DependencyGraph.containsNode("a", depGraph) == true
+assert DependencyGraph.getNode("a", depGraph) == Some('c')
+// DependencyGraph.updateNode
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode("a", 1, depGraph)
+assert DependencyGraph.getNode("a", depGraph) == Some(1)
+DependencyGraph.updateNode("a", x => {
+  assert x == Some(1)
+  Some(2)
+}, depGraph)
+assert DependencyGraph.getNode("a", depGraph) == Some(2)
+DependencyGraph.updateNode("a", x => {
+  assert x == Some(2)
+  None
+}, depGraph)
+assert DependencyGraph.getNode("a", depGraph) == None
+DependencyGraph.updateNode("b", x => {
+  assert x == None
+  Some(2)
+}, depGraph)
+assert DependencyGraph.getNode("b", depGraph) == Some(2)
+// DependencyGraph.removeNode
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode("a", 1, depGraph)
+assert DependencyGraph.containsNode("a", depGraph) == true
+DependencyGraph.removeNode("a", depGraph)
+assert DependencyGraph.containsNode("a", depGraph) == false
+// DependencyGraph.getNode
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+assert DependencyGraph.getNode('a', depGraph) == Some(1)
+assert DependencyGraph.getNode('b', depGraph) == None
+DependencyGraph.setNode('a', 2, depGraph)
+assert DependencyGraph.getNode('a', depGraph) == Some(2)
+// DependencyGraph.addDependency
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+assert DependencyGraph.addDependency('a', 'b', depGraph) == true
+assert DependencyGraph.addDependency('a', 'b', depGraph) == true
+assert DependencyGraph.addDependency('a', 'c', depGraph) == false
+assert DependencyGraph.addDependency('c', 'b', depGraph) == false
+// DependencyGraph.removeDependency
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+assert DependencyGraph.removeDependency('a', 'b', depGraph) == true
+assert DependencyGraph.removeDependency('a', 'b', depGraph) == false
+assert DependencyGraph.removeDependency('a', 'c', depGraph) == false
+assert DependencyGraph.removeDependency('c', 'b', depGraph) == false
+// DependencyGraph.hasDependency
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+assert DependencyGraph.hasDependency('a', 'b', depGraph) == false
+assert DependencyGraph.hasDependency('b', 'a', depGraph) == false
+DependencyGraph.addDependency('a', 'b', depGraph)
+assert DependencyGraph.hasDependency('a', 'b', depGraph) == true
+assert DependencyGraph.hasDependency('b', 'a', depGraph) == false
+assert DependencyGraph.hasDependency('a', 'c', depGraph) == false
+// DependencyGraph.entryNodes
+let depGraph = DependencyGraph.make()
+assert DependencyGraph.entryNodes(depGraph) == []
+DependencyGraph.setNode('a', 1, depGraph)
+assert DependencyGraph.entryNodes(depGraph) == ['a']
+DependencyGraph.setNode('b', 2, depGraph)
+assert List.sort(DependencyGraph.entryNodes(depGraph)) == ['a', 'b']
+DependencyGraph.addDependency('a', 'b', depGraph)
+assert List.sort(DependencyGraph.entryNodes(depGraph)) == ['a']
+// DependencyGraph.directDependenciesOf
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert List.sort(DependencyGraph.directDependenciesOf('a', depGraph)) ==
+  ['b', 'c']
+assert List.sort(DependencyGraph.directDependenciesOf('b', depGraph)) == ['c']
+assert List.sort(DependencyGraph.directDependenciesOf('c', depGraph)) == []
+// DependencyGraph.directDependantsOf
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert List.sort(DependencyGraph.directDependantsOf('a', depGraph)) == []
+assert List.sort(DependencyGraph.directDependantsOf('b', depGraph)) == ['a']
+assert List.sort(DependencyGraph.directDependantsOf('c', depGraph)) ==
+  ['a', 'b']
+// DependencyGraph.dependenciesOf - NonCyclic
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert match (DependencyGraph.dependenciesOf('a', depGraph)) {
+  Ok(x) => List.sort(x) == ['b', 'c'],
+  Err(_) => false,
+}
+assert match (DependencyGraph.dependenciesOf('b', depGraph)) {
+  Ok(x) => List.sort(x) == ['c'],
+  Err(_) => false,
+}
+assert match (DependencyGraph.dependenciesOf('c', depGraph)) {
+  Ok(x) => List.sort(x) == [],
+  Err(_) => false,
+}
+// DependencyGraph.dependenciesOf - Cyclic Error
+let depGraph = DependencyGraph.make()
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'a', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert match (DependencyGraph.dependenciesOf('a', depGraph)) {
+  Err(CircularDependency(depChain)) => depChain == ['a', 'b', 'a'],
+  Ok(_) | Err(_) => false,
+}
+assert match (DependencyGraph.dependenciesOf('b', depGraph)) {
+  Err(CircularDependency(depChain)) => depChain == ['b', 'a', 'b'],
+  Ok(_) | Err(_) => false,
+}
+assert match (DependencyGraph.dependenciesOf('c', depGraph)) {
+  Ok(x) => List.sort(x) == [],
+  Err(_) => false,
+}
+// DependencyGraph.dependenciesOf - Cyclic
+let depGraph = DependencyGraph.make(circular=true)
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'a', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert match (DependencyGraph.dependenciesOf('a', depGraph)) {
+  Ok(x) => List.sort(x) == ['b', 'c'],
+  Err(_) => false,
+}
+assert match (DependencyGraph.dependenciesOf('b', depGraph)) {
+  Ok(x) => List.sort(x) == ['a', 'c'],
+  Err(_) => false,
+}
+assert match (DependencyGraph.dependenciesOf('c', depGraph)) {
+  Ok(x) => List.sort(x) == [],
+  Err(_) => false,
+}
+// DependencyGraph.dependantsOf - NonCyclic
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert match (DependencyGraph.dependantsOf('a', depGraph)) {
+  Ok(x) => List.sort(x) == [],
+  Err(_) => false,
+}
+assert match (DependencyGraph.dependantsOf('b', depGraph)) {
+  Ok(x) => List.sort(x) == ['a'],
+  Err(_) => false,
+}
+assert match (DependencyGraph.dependantsOf('c', depGraph)) {
+  Ok(x) => List.sort(x) == ['a', 'b'],
+  Err(_) => false,
+}
+// DependencyGraph.dependantsOf - Cyclic Error
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'a', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert match (DependencyGraph.dependantsOf('a', depGraph)) {
+  Err(CircularDependency(depChain)) => depChain == ['a', 'b', 'a'],
+  Ok(_) | Err(_) => false,
+}
+assert match (DependencyGraph.dependantsOf('b', depGraph)) {
+  Err(CircularDependency(depChain)) => depChain == ['b', 'a', 'b'],
+  Ok(_) | Err(_) => false,
+}
+assert match (DependencyGraph.dependantsOf('c', depGraph)) {
+  Err(CircularDependency(depChain)) => {
+    // Note: We do not guarantee order, so you could get ['c', 'b', 'a', 'b'] or ['c', 'a', 'b', 'a']
+    List.contains('a', depChain) &&
+      List.contains('b', depChain) &&
+      List.contains('c', depChain)
+  },
+  Ok(_) | Err(_) => false,
+}
+// DependencyGraph.dependantsOf - Cyclic
+let depGraph = DependencyGraph.make(circular=true)
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'a', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert match (DependencyGraph.dependantsOf('a', depGraph)) {
+  Ok(x) => List.sort(x) == ['b'],
+  Err(_) => false,
+}
+assert match (DependencyGraph.dependantsOf('b', depGraph)) {
+  Ok(x) => List.sort(x) == ['a'],
+  Err(_) => false,
+}
+assert match (DependencyGraph.dependantsOf('c', depGraph)) {
+  Ok(x) => List.sort(x) == ['a', 'b'],
+  Err(_) => false,
+}
+// DependencyGraph.getCircularDependencies
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+assert DependencyGraph.getCircularDependencies(depGraph) == []
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert DependencyGraph.getCircularDependencies(depGraph) == []
+DependencyGraph.addDependency('c', 'a', depGraph)
+let cycles = DependencyGraph.getCircularDependencies(depGraph)
+assert List.length(cycles) == 3
+assert List.contains(['b', 'c', 'a', 'b'], cycles)
+assert List.contains(['c', 'a', 'b', 'c'], cycles)
+assert List.contains(['a', 'b', 'c', 'a'], cycles)
+// DependencyGraph.overallOrder - NonCyclic
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.setNode('d', 5, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('a', 'd', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert DependencyGraph.overallOrder(depGraph) == Ok(['d', 'c', 'b', 'a'])
+DependencyGraph.addDependency('d', 'c', depGraph)
+assert DependencyGraph.overallOrder(depGraph) == Ok(['c', 'd', 'b', 'a'])
+// DependencyGraph.overallOrder - Cyclic Error
+let depGraph = DependencyGraph.make()
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert DependencyGraph.overallOrder(depGraph) == Ok(['c', 'b', 'a'])
+DependencyGraph.addDependency('c', 'b', depGraph)
+assert match (DependencyGraph.overallOrder(depGraph)) {
+  Err(CircularDependencyList(cycles)) => {
+    List.length(cycles) == 3 &&
+      List.contains(['b', 'c', 'b'], cycles) &&
+      List.contains(['a', 'c', 'b', 'c'], cycles) &&
+      List.contains(['c', 'b', 'c'], cycles)
+  },
+  _ => false,
+}
+// DependencyGraph.overallOrder - Cyclic
+let depGraph = DependencyGraph.make(circular=true)
+DependencyGraph.setNode('a', 1, depGraph)
+DependencyGraph.setNode('b', 2, depGraph)
+DependencyGraph.setNode('c', 3, depGraph)
+DependencyGraph.addDependency('a', 'b', depGraph)
+DependencyGraph.addDependency('a', 'c', depGraph)
+DependencyGraph.addDependency('b', 'c', depGraph)
+assert DependencyGraph.overallOrder(depGraph) == Ok(['c', 'b', 'a'])
+DependencyGraph.addDependency('c', 'b', depGraph)
+assert DependencyGraph.overallOrder(depGraph) == Ok(['b', 'c', 'a'])

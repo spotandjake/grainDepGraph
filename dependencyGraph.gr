@@ -1,0 +1,569 @@
+/**
+ * A module for working with dependency graphs.
+ *
+ * Based on [jriecken/dependency-graph](https://github.com/jriecken/dependency-graph/blob/master)
+ *
+ * @since v0.1.0
+ */
+module DependencyGraph
+
+/*
+ * Large parts of this file are based on the `dependency-graph` library by Jim Riecken.
+ *
+ * Copyright (C) 2013-2020 by Jim Riecken
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+from "map" include Map
+from "set" include Set
+from "stack" include Stack
+from "list" include List
+
+/**
+ * An error that can occur when working with a dependency graph.
+ *
+ * @since v0.1.0
+ */
+provide enum DependencyGraphError<a> {
+  /**
+   * An error that occurs when a circular dependency is detected.
+   *
+   * Contains the dependency chain that caused the circular dependency.
+   */
+  CircularDependency(List<a>),
+  /**
+   * An error that occurs when at least one circular dependency is detected.
+   *
+   * Contains a list of circular dependency chains.
+   */
+  CircularDependencyList(List<List<a>>),
+  /**
+   * The node does not exist in the graph.
+   *
+   * Contains the key of the node that does not exist.
+   */
+  NodeDoesNotExist(a),
+}
+
+// Helper for depth first search when doing topological sort
+module DepthFirstSearch {
+  record Item<a> {
+    node: a,
+    processed: Bool,
+  }
+  /**
+   * A depth first search context.
+   */
+  abstract record DFS<a> {
+    visited: Set.Set<a>,
+    edges: Map.Map<a, Set.Set<a>>,
+    leavesOnly: Bool,
+    circular: Bool,
+    mut result: List<a>,
+  }
+
+  /**
+   * Creates a new depth first search context.
+   *
+   * @param edges: The edges of the graph
+   * @param leavesOnly: When true, only leaf nodes are visited
+   * @param circular: When true, the graph is allowed to have circular dependencies
+   *
+   * @returns A new depth first search context
+   */
+  provide let make = (edges, leavesOnly, circular) => {
+    return { visited: Set.make(), edges, leavesOnly, circular, result: [] }
+  }
+
+  /**
+   * Visits a node in the graph using depth first search.
+   *
+   * @param startNode: The node to start the search from
+   * @param dfs: The depth first search context
+   *
+   * @returns `Ok(result)` if the search was successful, `Err(error)` otherwise
+   */
+  provide let visit = (startNode, dfs) => {
+    if (Set.contains(startNode, dfs.visited)) return Ok(dfs.result)
+    let inCurrentPath = Set.make() // Nodes in the current path
+    let mut currentPath = [] // The list of nodes along the current path
+    let workQueue = Stack.make()
+    Stack.push({ node: startNode, processed: false }, workQueue)
+    while (true) {
+      match (Stack.pop(workQueue)) {
+        // Haven't visited edges yet (visiting phase)
+        Some({ node, processed: false }) when Set.contains(node, dfs.visited) =>
+          continue,
+        Some({ node, processed: false }) when Set.contains(node, inCurrentPath) => {
+          match (dfs.circular) {
+            true => continue,
+            false => {
+              currentPath = [node, ...currentPath]
+              return Err(CircularDependency(List.reverse(currentPath)))
+            },
+          }
+        },
+        // Process the edge
+        Some({ node, processed: false }) => {
+          Stack.push({ node, processed: true }, workQueue)
+          Set.add(node, inCurrentPath)
+          currentPath = [node, ...currentPath]
+          match (Map.get(node, dfs.edges)) {
+            Some(edges) => {
+              List.forEach(edge => {
+                Stack.push({ node: edge, processed: false }, workQueue)
+              }, List.sort(Set.toList(edges)))
+            },
+            None => void,
+          }
+        },
+        // Visited Edge
+        Some({ node, processed: true }) => {
+          // TODO: Look into making currentPath some sort of stack
+          currentPath = match (currentPath) {
+            [node, ...rest] => rest,
+            _ => [],
+          }
+          Set.remove(node, inCurrentPath)
+          Set.add(node, dfs.visited)
+          dfs.result = match (Map.get(node, dfs.edges)) {
+            _ when !dfs.leavesOnly => [node, ...dfs.result],
+            Some(e) when Set.isEmpty(e) => [node, ...dfs.result],
+            None => [node, ...dfs.result],
+            _ => dfs.result,
+          }
+        },
+        None => break,
+      }
+    }
+    return Ok(dfs.result)
+  }
+}
+
+/**
+ * A graph data structure that represents dependencies between nodes.
+ *
+ * @since v0.1.0
+ */
+abstract record Graph<key, value> {
+  circular: Bool,
+  nodes: Map.Map<key, value>,
+  outgoingEdges: Map.Map<key, Set.Set<key>>,
+  incomingEdges: Map.Map<key, Set.Set<key>>,
+}
+
+/**
+ * Creates a new dependency graph.
+ *
+ * @param circular: When true, the graph will allow circular dependencies.
+ *
+ * @returns A new dependency graph.
+ *
+ * @since v0.1.0
+ */
+provide let make = (circular=false) => {
+  return {
+    circular,
+    nodes: Map.make(),
+    outgoingEdges: Map.make(),
+    incomingEdges: Map.make(),
+  }
+}
+
+/**
+ * Determines the number of nodes in the graph.
+ *
+ * @param graph: The graph to inspect
+ *
+ * @returns The number of nodes in the graph
+ *
+ * @since v0.1.0
+ */
+provide let size = graph => {
+  Map.size(graph.nodes)
+}
+
+/**
+ * Determines if the graph contains a node with the given key.
+ *
+ * @param key: The key to search for
+ *
+ * @returns `true` if the graph contains a node with the given key, `false` otherwise
+ *
+ * @since v0.1.0
+ */
+provide let containsNode = (key, graph) => {
+  Map.contains(key, graph.nodes)
+}
+
+/**
+ * Adds a new node to the graph. If the node already exists in the graph, the value is replaced.
+ *
+ * @param key: The key of the node to add
+ * @param value: The value of the node to add
+ * @param graph: The graph to modify
+ *
+ * @since v0.1.0
+ */
+provide let setNode = (key, value, graph) => {
+  Map.set(key, value, graph.nodes)
+  Map.set(key, Set.make(), graph.outgoingEdges)
+  Map.set(key, Set.make(), graph.incomingEdges)
+}
+
+/**
+ * Updates the value of a node in the graph.
+ *
+ * @param key: The key of the node to update
+ * @param fn: The function to apply to the node's value
+ * @param graph: The graph to modify
+ *
+ * @since v0.1.0
+ */
+provide let updateNode = (key, fn, graph) => {
+  Map.update(key, fn, graph.nodes)
+}
+
+/**
+ * Removes a node from the graph.
+ *
+ * @param key: The key of the node to remove
+ * @param graph: The graph to modify
+ *
+ * @returns `true` if the node was removed, `false` if the node does not exist
+ *
+ * @since v0.1.0
+ */
+provide let removeNode = (key, graph) => {
+  if (!containsNode(key, graph)) return false
+  // Remove the node
+  Map.remove(key, graph.nodes)
+  Map.remove(key, graph.outgoingEdges)
+  Map.remove(key, graph.incomingEdges)
+  // Update the edge lists
+  Map.forEach((fromKey, outgoingEdges) => {
+    Set.remove(key, outgoingEdges)
+  }, graph.outgoingEdges)
+  Map.forEach((toKey, incomingEdges) => {
+    Set.remove(key, incomingEdges)
+  }, graph.incomingEdges)
+  return true
+}
+
+/**
+ * Retrieves the value of a node in the graph.
+ *
+ * @param key: The key of the node to retrieve
+ * @param graph: The graph to search
+ *
+ * @returns `Some(value)` if the node exists, `None` otherwise
+ *
+ * @since v0.1.0
+ */
+provide let getNode = (key, graph) => {
+  Map.get(key, graph.nodes)
+}
+
+/**
+ * Adds a dependency between two nodes in the graph.
+ *
+ * @param fromKey: The key of the node that depends on the other
+ * @param toKey: The key of the node that is depended on
+ * @param graph: The graph to modify
+ *
+ * @returns `true` if the dependency was added, `false` if either node does not exist
+ *
+ * @since v0.1.0
+ */
+provide let addDependency = (fromKey, toKey, graph) => {
+  // Ensure both nodes exist
+  if (!containsNode(fromKey, graph)) return false
+  if (!containsNode(toKey, graph)) return false
+  // Add the dependency
+  Map.update(fromKey, outgoingEdges => {
+    let outgoingEdges = match (outgoingEdges) {
+      // Note: This should be impossible, but the semantics are clear so we handle it
+      None => Set.make(),
+      Some(set) => set,
+    }
+    Set.add(toKey, outgoingEdges)
+    Some(outgoingEdges)
+  }, graph.outgoingEdges)
+  Map.update(toKey, incomingEdges => {
+    let incomingEdges = match (incomingEdges) {
+      // Note: This should be impossible, but the semantics are clear so we handle it
+      None => Set.make(),
+      Some(set) => set,
+    }
+    Set.add(fromKey, incomingEdges)
+    Some(incomingEdges)
+  }, graph.incomingEdges)
+  return true
+}
+
+/**
+ * Removes a dependency between two nodes in the graph.
+ *
+ * @param fromKey: The key of the node that depends on the other
+ * @param toKey: The key of the node that is depended on
+ * @param graph: The graph to modify
+ *
+ * @returns `true` if the dependency was removed, `false` if either node does not exist or the dependency does not exist
+ *
+ * @since v0.1.0
+ */
+provide let removeDependency = (fromKey, toKey, graph) => {
+  // Ensure both nodes exist
+  if (!containsNode(fromKey, graph)) return false
+  if (!containsNode(toKey, graph)) return false
+  // Remove the dependency
+  let dependencyExists = box(false)
+  Map.update(fromKey, outgoingEdges => {
+    match (outgoingEdges) {
+      Some(edges) when Set.contains(toKey, edges) => {
+        dependencyExists := true
+        Set.remove(toKey, edges)
+        Some(edges)
+      },
+      _ => outgoingEdges,
+    }
+  }, graph.outgoingEdges)
+  Map.update(fromKey, incomingEdges => {
+    match (incomingEdges) {
+      Some(edges) when Set.contains(fromKey, edges) => {
+        if (!unbox(dependencyExists))
+          fail "Impossible: Found dependency in incomingEdges but not in outgoingEdges"
+        dependencyExists := true
+        Set.remove(fromKey, edges)
+        Some(edges)
+      },
+      _ => incomingEdges,
+    }
+  }, graph.incomingEdges)
+  return unbox(dependencyExists)
+}
+
+/**
+ * Determines if a dependency exists between two nodes in the graph.
+ *
+ * @param fromKey: The key of the node that depends on the other
+ * @param toKey: The key of the node that is depended on
+ *
+ * @returns `true` if the dependency exists, `false` otherwise
+ *
+ * @since v0.1.0
+ */
+provide let hasDependency = (fromKey, toKey, graph) => {
+  match (Map.get(fromKey, graph.outgoingEdges)) {
+    Some(edges) => Set.contains(toKey, edges),
+    None => false,
+  }
+}
+
+/**
+ * Gets the nodes in the graph that have no incoming edges.
+ *
+ * @param graph: The graph to search
+ *
+ * @returns The nodes in the graph that have no incoming edges
+ *
+ * @since v0.1.0
+ */
+provide let entryNodes = graph => {
+  let keys = Map.keys(graph.nodes)
+  List.filter(key => {
+    match (Map.get(key, graph.incomingEdges)) {
+      Some(set) => Set.isEmpty(set),
+      None => true,
+    }
+  }, keys)
+}
+
+/**
+ * Gets the direct dependencies of a node in the graph.
+ *
+ * @param key: The key of the node to get the dependencies of
+ * @param graph: The graph to search
+ *
+ * @returns An array of the direct dependencies of the node
+ *
+ * @since v0.1.0
+ */
+provide let directDependenciesOf = (key, graph) => {
+  match (Map.get(key, graph.outgoingEdges)) {
+    Some(set) => Set.toList(set),
+    None => [],
+  }
+}
+
+/**
+ * Gets the direct dependants of a node in the graph.
+ *
+ * @param key: The key of the node to get the dependants of
+ * @param graph: The graph to search
+ *
+ * @returns An array of the direct dependants of the node
+ */
+provide let directDependantsOf = (key, graph) => {
+  match (Map.get(key, graph.incomingEdges)) {
+    Some(set) => Set.toList(set),
+    None => [],
+  }
+}
+
+/**
+ * Gets the dependencies of a node in the graph.
+ *
+ * @param key: The key of the node to get the dependencies of
+ * @param graph: The graph to search
+ * @param leavesOnly: When true, only leaf nodes are returned
+ *
+ * @returns `Ok(dependencies)` if the node exists, `Err(error)` otherwise
+ *
+ * @since v0.1.0
+ */
+provide let dependenciesOf = (key, graph, leavesOnly=false) => {
+  if (!containsNode(key, graph)) return Err(NodeDoesNotExist(key))
+  let dfs = DepthFirstSearch.make(
+    graph.outgoingEdges,
+    leavesOnly,
+    graph.circular
+  )
+  return match (DepthFirstSearch.visit(key, dfs)) {
+    Ok(result) => {
+      // Remove the node itself from the result
+      Ok(List.filter(n => n != key, result))
+    },
+    Err(err) => Err(err),
+  }
+}
+
+/**
+ * Gets the dependants of a node in the graph.
+ *
+ * @param key: The key of the node to get the dependants of
+ * @param graph: The graph to search
+ * @param leavesOnly: When true, only leaf nodes are returned
+ *
+ * @returns `Ok(dependants)` if the node exists, `Err(error)` otherwise
+ *
+ * @since v0.1.0
+ */
+provide let dependantsOf = (key, graph, leavesOnly=false) => {
+  if (!containsNode(key, graph)) return Err(NodeDoesNotExist(key))
+  let dfs = DepthFirstSearch.make(
+    graph.incomingEdges,
+    leavesOnly,
+    graph.circular
+  )
+  return match (DepthFirstSearch.visit(key, dfs)) {
+    Ok(result) => {
+      // Remove the node itself from the result
+      Ok(List.filter(n => n != key, result))
+    },
+    Err(err) => Err(err),
+  }
+}
+
+/**
+ * Gets any circular dependencies in the graph.
+ *
+ * @param graph: The graph to inspect
+ *
+ * @returns A list of circular dependency chains, or an empty list if there are none
+ *
+ * @since v0.1.0
+ */
+provide let getCircularDependencies = graph => {
+  // Look for cycles - we run the DFS starting at all the nodes in case there
+  // are several disconnected subgraphs inside this dependency graph.
+  let cycleDfs = DepthFirstSearch.make(graph.outgoingEdges, false, false)
+  let keys = Map.keys(graph.nodes)
+  let cycles = List.map(key => {
+    match (DepthFirstSearch.visit(key, cycleDfs)) {
+      Err(CircularDependency(cyclePath)) => cyclePath,
+      _ => [],
+    }
+  }, keys)
+  List.filter(cycle => !List.isEmpty(cycle), cycles)
+}
+
+/**
+ * Performs a topological sort on the graph.
+ *
+ * @param leavesOnly: When true, only leaf nodes are returned
+ * @param graph: The graph to sort
+ *
+ * @returns `Ok(orderedDependencies)` if the sort was successful, `Err(error)` otherwise
+ *
+ * @since v0.1.0
+ */
+provide let overallOrder = (leavesOnly=false, graph) => {
+  let keys = Map.keys(graph.nodes)
+  if (List.isEmpty(keys)) return Ok([]) // Empty graph
+  // Handle circular dependencies
+  if (!graph.circular) {
+    match (getCircularDependencies(graph)) {
+      [] => void,
+      cycles => return Err(CircularDependencyList(cycles)),
+    }
+  }
+  // Perform a topological sort
+  let dfs = DepthFirstSearch.make(
+    graph.outgoingEdges,
+    leavesOnly,
+    graph.circular
+  )
+  // Run dfs from every starting point
+  let (error, results) = List.reduce(
+    ((error, results) as acc, node) => {
+      if (error != None) return acc
+      return match (DepthFirstSearch.visit(node, dfs)) {
+        Ok(r) => (error, r),
+        Err(err) => (Some(err), results),
+      }
+    },
+    (None, []),
+    entryNodes(graph)
+  )
+  let (error, results) = match (graph.circular) {
+    // When circular dependencies are allowed, we could have isolated subgraphs
+    true when error == None => {
+      // TODO: Optimize this
+      let isolatedKeys = List.filter(key => !List.contains(key, results), keys)
+      List.reduce(
+        ((error, results) as acc, node) => {
+          if (error != None) return acc
+          return match (DepthFirstSearch.visit(node, dfs)) {
+            Ok(r) => (error, r),
+            Err(err) => (Some(err), results),
+          }
+        },
+        (error, results),
+        isolatedKeys
+      )
+    },
+    _ => (error, results),
+  }
+  return match (error) {
+    Some(err) => Err(err),
+    None => Ok(List.reverse(results)),
+  }
+}
